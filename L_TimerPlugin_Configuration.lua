@@ -1,26 +1,24 @@
 tpData = [[
-[
-	{
-		"name": "Restroom",
+{
+	"Restroom": {
 		"sensorsID": {
-			"1" : ""
+			"1": "14"
 		},
-		"switchsID" : {
-			"1": ""	
+		"switchsID": {
+			"1": "19"
 		},
-		"timeOn" : "120"
+		"timeOn": "120"
 	},
-	{
-		"name": "Water Pump",
+	"Water Pump": {
 		"sensorsID": {
-			"1" : "",
-			"2" : ""
-		}, 
-		"switchsID" : {
-			"1": ""	
+			"1": "14",
+			"2": "49"
 		},
-		"timeOn" : "120"	
+		"switchsID": {
+			"1": "13"
+		},
+		"timeOn": "120"
 	}
 
-]
+}
 ]]
