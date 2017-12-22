@@ -10,9 +10,8 @@ local S_SID = "urn:upnp-org:serviceId:SwitchPower1"
 local Delay = 10
 
 local tpConfig
-local SensorTable = {}
 local RoomsOn = {}
-local TimeOn = {}
+local SensorTime = {}
 
  -- Sets the config from the json
 function tpSetConfig(data)
@@ -52,12 +51,18 @@ end
 function SetSwitch(deviceID, value)
 	lul_arguments = {}
   lul_arguments["newTargetValue"] = value
+  --luup.log("Setting device: " .. deviceID .. " to " .. value)
   luup.call_action("urn:upnp-org:serviceId:SwitchPower1", "SetTarget", lul_arguments,deviceID)
 end
 
 function GetSwitchTargetLevel(deviceID)
 	return luup.variable_get(S_SID, "Status", deviceID) == "1"
 end
+
+function IsSensorTriped(deviceID)
+	return luup.variable_get(Sensor_SID, "Tripped", deviceID) == "1"
+end
+
 
 function Timer(room)
 
@@ -67,31 +72,37 @@ function Timer(room)
 		SetRoom(room, 1)
 		isSwitchOn = true
 	end
-	if (TimeOn[room] == nil) then TimeOn[room] = 0 end
 
 	for k,value in pairs(tpConfig[room]["switchsID"]) do
 		if (GetSwitchTargetLevel(tonumber(value))) then isSwitchOn = true end
 	end
-
 	if (isSwitchOn) then
-		local isTripped = false
+		local currentTime = os.time()
+		--luup.log("Current time is " .. currentTime)
+		
+		local shouldBeOn = -1
 		for k,value in pairs(tpConfig[room]["sensorsID"]) do
-			if SensorTable[tonumber(value)] == 1 then isTripped = true end
-		end
-
-		if (isTripped) then
-			TimeOn[room] = 0
-			luup.call_timer("Timer", 1, "10", "", room)
-		else
-			TimeOn[room] = TimeOn[room] + Delay
-			if TimeOn[room] >= tonumber(tpConfig[room]["timeOn"]) then
-				RoomsOn[room] = false
-				SetRoom(room, 0)
-			else
-				luup.call_timer("Timer", 1, "10", "", room)
+			local isTriped = IsSensorTriped(tonumber(value))
+			if (isTriped == true) then
+				shouldBeOn = 0
+				break
+			end
+			local lastUpdate = SensorTime[tonumber(value)]
+			--luup.log("Last trip on sensor " .. value .. " is " .. lastUpdate)
+			if ((currentTime - lastUpdate) < tonumber(tpConfig[room]["timeOn"])) then
+				if (shouldBeOn < currentTime - lastUpdate) then
+					shouldBeOn = currentTime - lastUpdate
+				end
 			end
 		end
 
+		if (shouldBeOn == -1) then
+			RoomsOn[room] = false
+			SetRoom(room, 0)
+		else 
+			--luup.log("Calling timer with delay of: " .. (tonumber(tpConfig[room]["timeOn"]) - shouldBeOn) .. " for room " .. room)
+			luup.call_timer("Timer", 1, tostring(tonumber(tpConfig[room]["timeOn"]) - shouldBeOn), "", room)
+		end
 	else
 		RoomsOn[room] = false
 		SetRoom(room, 0)
@@ -100,31 +111,30 @@ function Timer(room)
 end
 
 function SensorWatch(dev_id, service, variable, old_val, new_val)
-	SensorTable[dev_id] = tonumber(new_val)
 	if (tonumber(new_val) == 1) then
 		local rooms = getRoomsFromSensor(dev_id)
 		for k,value in pairs(rooms) do
-			if RoomsOn[value] ~= true then Timer(value) else TimeOn[value] = 0 end
+			if RoomsOn[value] ~= true then Timer(value) end
 		end
 	end
+	if (tonumber(old_val) == 1 and tonumber(new_val) == 0) then
+		--luup.log("Setting sensor lastUpdate to " .. os.time())
+		SensorTime[tonumber(dev_id)] = os.time()
+	end
 end
-
 
 function SetupSensorWatch()
 	for k,data in pairs(tpConfig) do
 		for k1,ID in pairs(data["sensorsID"]) do
-			if (SensorTable[tonumber(ID)] == nil) then
-				SensorTable[tonumber(ID)] = 0
-				luup.variable_watch("SensorWatch", Sensor_SID, "Tripped",  tonumber(ID))
-			end
+			luup.variable_watch("SensorWatch", Sensor_SID, "Tripped",  tonumber(ID))
 		end
 	end
 end
 
  -- Function called on device startup
 function tpStartup()
-	luup.log("Startup")
+	luup.log("Time - Startup")
 	GetTpConfig()
 	SetupSensorWatch()
-	luup.log("Startup complete!")
+	luup.log("Time - Startup complete!")
 end
